@@ -152,10 +152,13 @@ class IntelligentConfig:
         """Get LLM configuration with Ollama integration."""
         has_ollama = self.check_command_availability("ollama")
         
+        # Try to detect available models if Ollama is installed
+        available_model = self.detect_available_ollama_model() if has_ollama else "phi3:mini"
+        
         config = {
             "enabled": has_ollama,
             "provider": "ollama" if has_ollama else "none",
-            "model": "phi3:3.8b-mini-instruct-4k-q4_0",
+            "model": available_model,
             "api_base": "http://localhost:11434",
             "temperature": 0.7,
             "max_tokens": 2000
@@ -165,6 +168,36 @@ class IntelligentConfig:
             config["fallback_message"] = "LLM features disabled - Ollama not available"
             
         return config
+
+    def detect_available_ollama_model(self) -> str:
+        """Detect which Ollama model is available."""
+        try:
+            result = subprocess.run(["ollama", "list"], 
+                                  capture_output=True, 
+                                  text=True, 
+                                  timeout=5)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                if len(lines) > 1:  # Skip header line
+                    # Get the first available model
+                    first_model = lines[1].split()[0] if lines[1].split() else "phi3:mini"
+                    return first_model
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        
+        # Default fallback models in order of preference
+        fallback_models = ["phi3:mini", "llama3.2:3b", "llama3.1:8b", "mistral:7b"]
+        for model in fallback_models:
+            try:
+                result = subprocess.run(["ollama", "show", model], 
+                                      capture_output=True, 
+                                      timeout=3)
+                if result.returncode == 0:
+                    return model
+            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+                
+        return "phi3:mini"  # Ultimate fallback
 
     def get_monitoring_config(self) -> Dict[str, Any]:
         """Get monitoring configuration."""

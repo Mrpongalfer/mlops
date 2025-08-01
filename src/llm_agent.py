@@ -4,6 +4,15 @@ import requests
 import sys
 from pathlib import Path
 from datetime import datetime
+from .intelligent_config import get_config
+
+def get_ollama_model() -> str:
+    """Get the configured Ollama model from intelligent config."""
+    try:
+        config = get_config()
+        return config.get("llm", {}).get("model", "phi3:mini")
+    except Exception:
+        return "phi3:mini"  # Fallback
 
 def generate_llm_report(metrics_path: str = "reports/latest_metrics.json") -> str:
     """Generate an LLM-powered report from model metrics using Ollama."""
@@ -12,6 +21,9 @@ def generate_llm_report(metrics_path: str = "reports/latest_metrics.json") -> st
         # Load metrics
         with open(metrics_path, 'r') as f:
             metrics = json.load(f)
+        
+        # Get the configured model dynamically
+        model_name = get_ollama_model()
         
         # Create prompt for LLM
         prompt = f"""
@@ -38,7 +50,7 @@ def generate_llm_report(metrics_path: str = "reports/latest_metrics.json") -> st
         ollama_response = requests.post(
             "http://localhost:11434/api/generate",
             json={
-                "model": "phi3:3.8b-mini-instruct-4k-q4_0",
+                "model": model_name,
                 "prompt": prompt,
                 "stream": False,
                 "options": {
@@ -217,10 +229,11 @@ class LLMAgent:
     def run_ollama(self, prompt: str) -> str:
         """Run Ollama inference with the given prompt."""
         try:
+            model_name = get_ollama_model()
             response = requests.post(
                 "http://localhost:11434/api/generate",
                 json={
-                    "model": "phi3:3.8b-mini-instruct-4k-q4_0",
+                    "model": model_name,
                     "prompt": prompt,
                     "stream": False
                 },

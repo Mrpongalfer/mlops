@@ -216,14 +216,97 @@ install_ollama() {
     if ! pgrep -x "ollama" > /dev/null; then
         log_info "Starting Ollama service"
         ollama serve &
-        sleep 3
+        sleep 5
     fi
     
-    # Pull the required model
-    log_info "Pulling phi3:3.8b model (this may take a while)"
-    ollama pull phi3:3.8b-mini-instruct-4k-q4_0
+    # Interactive model selection
+    select_ollama_model
     
     log_success "Ollama installed and model ready"
+}
+
+# Interactive model selection for Ollama
+select_ollama_model() {
+    log_header "Ollama Model Selection"
+    
+    echo -e "${CYAN}Available popular models for the Omnitide AI Suite:${NC}\n"
+    
+    # Define popular models with descriptions
+    declare -A models
+    models=(
+        ["phi3:mini"]="Phi-3 Mini (3.8B) - Fast, efficient, great for coding and reasoning"
+        ["llama3.1:8b"]="Llama 3.1 8B - Versatile, good balance of speed and capability"
+        ["llama3.2:3b"]="Llama 3.2 3B - Lightweight, fast inference"
+        ["codellama:7b"]="Code Llama 7B - Specialized for code generation and understanding"
+        ["mistral:7b"]="Mistral 7B - Excellent instruction following and reasoning"
+        ["gemma2:9b"]="Gemma 2 9B - Google's efficient model with strong performance"
+        ["qwen2.5:7b"]="Qwen 2.5 7B - Strong multilingual and reasoning capabilities"
+    )
+    
+    # Display options
+    local i=1
+    local model_keys=()
+    for model in "${!models[@]}"; do
+        echo -e "${YELLOW}$i)${NC} ${GREEN}$model${NC} - ${models[$model]}"
+        model_keys+=("$model")
+        ((i++))
+    done
+    
+    echo -e "\n${YELLOW}8)${NC} ${CYAN}Custom model${NC} - Enter your own model name"
+    echo -e "${YELLOW}9)${NC} ${BLUE}Skip model installation${NC} - Install later manually"
+    
+    # Get user selection
+    echo ""
+    read -p "$(echo -e "${CYAN}Select a model [1-9]:${NC} ")" choice
+    
+    local selected_model=""
+    case $choice in
+        [1-7])
+            local index=$((choice-1))
+            selected_model="${model_keys[$index]}"
+            ;;
+        8)
+            echo ""
+            read -p "$(echo -e "${CYAN}Enter custom model name (e.g., llama3.1:8b):${NC} ")" custom_model
+            if [[ -n "$custom_model" ]]; then
+                selected_model="$custom_model"
+            else
+                log_warn "No model name provided, skipping model installation"
+                return
+            fi
+            ;;
+        9)
+            log_info "Skipping model installation - you can install later with: ollama pull <model-name>"
+            return
+            ;;
+        *)
+            log_warn "Invalid selection, defaulting to phi3:mini"
+            selected_model="phi3:mini"
+            ;;
+    esac
+    
+    if [[ -n "$selected_model" ]]; then
+        log_info "Pulling model: $selected_model (this may take a while depending on model size)"
+        echo -e "${YELLOW}Note: First-time model downloads can be several GB. Please be patient...${NC}\n"
+        
+        if ollama pull "$selected_model"; then
+            log_success "Model '$selected_model' downloaded successfully"
+            
+            # Update the global variable for use in config
+            OLLAMA_MODEL_NAME="$selected_model"
+            
+            # Test the model
+            log_info "Testing model..."
+            if echo "Hello, respond with just 'Model working!' to confirm setup." | ollama run "$selected_model" --format json &>/dev/null; then
+                log_success "Model test passed"
+            else
+                log_warn "Model test failed, but model should still work"
+            fi
+        else
+            log_error "Failed to download model '$selected_model'"
+            log_info "You can try again later with: ollama pull $selected_model"
+        fi
+    fi
 }
 
 # Install Tailscale
@@ -299,7 +382,11 @@ setup_project_structure() {
 DVC_REMOTE_URL=http://dvc-storage.tailnet-id.ts.net:9000
 DVC_ACCESS_KEY_ID=
 DVC_SECRET_ACCESS_KEY=
-OLLAMA_MODEL_NAME=phi3:3.8b-mini-instruct-4k-q4_0
+# Global configuration
+PYTHON_VERSION="3.10"
+PROJECT_NAME="omnitide-ai-suite"
+VENV_NAME=".venv"
+OLLAMA_MODEL_NAME="phi3:mini"  # Default, can be changed during installation
 TAILSCALE_AUTH_KEY=
 ENVIRONMENT=development
 EOF
