@@ -530,7 +530,7 @@ main() {
 }
 
 # Handle script arguments
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]]; then
     case "${1:-}" in
         --help|-h)
             echo "Omnitide AI Suite Auto-Installer"
