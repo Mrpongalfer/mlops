@@ -33,20 +33,52 @@
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites
-- [Python 3.10+](https://www.python.org/)
-- [Docker](https://www.docker.com/)
-- [Poetry](https://python-poetry.org/) for dependency management.
-- [Ollama](https://ollama.ai/) for local LLM inference.
-- [Tailscale](https://tailscale.com/) for secure networking.
+### One-Command Installation
 
-### 2. Setup
-
-The `intelligent_setup.sh` script inspects your environment and prepares the project.
-
+**Option 1: Quick Install (Auto-selects model)**
 ```bash
-bash intelligent_setup.sh
+curl -fsSL https://raw.githubusercontent.com/mrpongalfer/mlops/main/install.sh | bash
 ```
+*Note: When piped from curl, this automatically selects `phi3:mini` for reliability*
+
+**Option 2: Interactive Install (Choose your model)**
+```bash
+curl -fsSL https://raw.githubusercontent.com/mrpongalfer/mlops/main/install_interactive.sh | bash
+```
+*This provides a full interactive menu to select your preferred LLM model*
+
+**Option 3: Manual Download for Full Control**
+```bash
+# Download and run locally for maximum interactivity
+wget https://raw.githubusercontent.com/mrpongalfer/mlops/main/install.sh
+chmod +x install.sh
+./install.sh
+```
+
+### What Gets Installed
+
+The installer automatically:
+- ✅ Detects your OS and architecture
+- ✅ Installs system dependencies (Python, Git, etc.)
+- ✅ Sets up Python virtual environment
+- ✅ Installs Poetry, Docker, Ollama, Tailscale, DVC
+- ✅ Configures the complete Omnitide AI Suite
+- ✅ Downloads your chosen LLM model
+- ✅ Runs initial model training
+- ✅ Validates the installation
+
+### Available LLM Models
+
+When using the interactive installer, you can choose from:
+1. **phi3:mini** - Fast, efficient, great for coding (default)
+2. **llama3.1:8b** - Versatile, good balance of speed and capability  
+3. **llama3.2:3b** - Lightweight, fast inference
+4. **codellama:7b** - Specialized for code generation
+5. **mistral:7b** - Excellent instruction following
+6. **gemma2:9b** - Google's efficient model
+7. **qwen2.5:7b** - Strong multilingual capabilities
+8. **Custom model** - Enter any model from Ollama's registry
+9. **Skip installation** - Install models later manually
 
 ### 3. Using the Intelligent Entrypoint (Recommended)
 

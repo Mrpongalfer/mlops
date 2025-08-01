@@ -229,6 +229,22 @@ install_ollama() {
 select_ollama_model() {
     log_header "Ollama Model Selection"
     
+    # Check if we can do interactive input (not piped from curl)
+    if [[ ! -t 0 ]]; then
+        log_info "Non-interactive mode detected (piped from curl)"
+        log_info "Defaulting to phi3:mini for reliable installation"
+        log_info "You can change models later with: ollama pull <model-name>"
+        
+        selected_model="phi3:mini"
+        if ollama pull "$selected_model"; then
+            log_success "Default model '$selected_model' downloaded successfully"
+            OLLAMA_MODEL_NAME="$selected_model"
+        else
+            log_warn "Failed to download default model. You can install manually later."
+        fi
+        return
+    fi
+    
     echo -e "${CYAN}Available popular models for the Omnitide AI Suite:${NC}\n"
     
     # Define popular models with descriptions
@@ -255,9 +271,16 @@ select_ollama_model() {
     echo -e "\n${YELLOW}8)${NC} ${CYAN}Custom model${NC} - Enter your own model name"
     echo -e "${YELLOW}9)${NC} ${BLUE}Skip model installation${NC} - Install later manually"
     
-    # Get user selection
+    # Get user selection with timeout and fallback
     echo ""
-    read -p "$(echo -e "${CYAN}Select a model [1-9]:${NC} ")" choice
+    local choice=""
+    if read -t 30 -p "$(echo -e "${CYAN}Select a model [1-9] (30s timeout, defaults to 1):${NC} ")" choice; then
+        echo ""
+    else
+        echo ""
+        log_info "No input received, defaulting to option 1 (phi3:mini)"
+        choice="1"
+    fi
     
     local selected_model=""
     case $choice in
@@ -267,20 +290,25 @@ select_ollama_model() {
             ;;
         8)
             echo ""
-            read -p "$(echo -e "${CYAN}Enter custom model name (e.g., llama3.1:8b):${NC} ")" custom_model
-            if [[ -n "$custom_model" ]]; then
-                selected_model="$custom_model"
+            local custom_model=""
+            if read -t 30 -p "$(echo -e "${CYAN}Enter custom model name (e.g., llama3.1:8b):${NC} ")" custom_model; then
+                if [[ -n "$custom_model" ]]; then
+                    selected_model="$custom_model"
+                else
+                    log_warn "No model name provided, defaulting to phi3:mini"
+                    selected_model="phi3:mini"
+                fi
             else
-                log_warn "No model name provided, skipping model installation"
-                return
+                log_warn "Input timeout, defaulting to phi3:mini"
+                selected_model="phi3:mini"
             fi
             ;;
         9)
             log_info "Skipping model installation - you can install later with: ollama pull <model-name>"
             return
             ;;
-        *)
-            log_warn "Invalid selection, defaulting to phi3:mini"
+        ""|*)
+            log_info "No selection or invalid input, defaulting to phi3:mini"
             selected_model="phi3:mini"
             ;;
     esac
