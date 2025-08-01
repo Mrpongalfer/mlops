@@ -163,16 +163,78 @@ install_poetry() {
     fi
     
     log_info "Installing Poetry package manager"
-    curl -sSL https://install.python-poetry.org | python3 -
     
-    # Add Poetry to PATH
-    export PATH="$HOME/.local/bin:$PATH"
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+    # Try multiple installation methods
+    local poetry_installed=false
     
-    # Configure Poetry
-    poetry config virtualenvs.in-project true
+    # Method 1: Official installer
+    if curl -fsSL --connect-timeout 10 https://install.python-poetry.org | python3 -; then
+        poetry_installed=true
+        log_success "Poetry installed via official installer"
+    else
+        log_warn "Official Poetry installer failed, trying alternative methods..."
+        
+        # Method 2: pip install (fallback)
+        if pip install --user poetry; then
+            poetry_installed=true
+            log_success "Poetry installed via pip"
+        else
+            log_warn "pip install poetry failed, trying system package manager..."
+            
+            # Method 3: System package manager (if available)
+            case "$OS" in
+                linux)
+                    if command_exists apt-get; then
+                        if sudo apt-get install -y python3-poetry 2>/dev/null; then
+                            poetry_installed=true
+                            log_success "Poetry installed via apt"
+                        fi
+                    elif command_exists yum; then
+                        if sudo yum install -y poetry 2>/dev/null; then
+                            poetry_installed=true
+                            log_success "Poetry installed via yum"
+                        fi
+                    elif command_exists pacman; then
+                        if sudo pacman -S --noconfirm python-poetry 2>/dev/null; then
+                            poetry_installed=true
+                            log_success "Poetry installed via pacman"
+                        fi
+                    fi
+                    ;;
+                darwin)
+                    if command_exists brew; then
+                        if brew install poetry 2>/dev/null; then
+                            poetry_installed=true
+                            log_success "Poetry installed via Homebrew"
+                        fi
+                    fi
+                    ;;
+            esac
+        fi
+    fi
     
-    log_success "Poetry installed and configured"
+    if [ "$poetry_installed" = true ]; then
+        # Add Poetry to PATH
+        export PATH="$HOME/.local/bin:$PATH"
+        
+        # Add to shell config if not already there
+        for shell_config in ~/.bashrc ~/.zshrc ~/.profile; do
+            if [ -f "$shell_config" ] && ! grep -q "/.local/bin:" "$shell_config"; then
+                echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$shell_config"
+                break
+            fi
+        done
+        
+        # Configure Poetry if available
+        if command_exists poetry; then
+            poetry config virtualenvs.in-project true 2>/dev/null || true
+            log_success "Poetry configured successfully"
+        fi
+    else
+        log_warn "Poetry installation failed with all methods"
+        log_info "The project can still work with pip and virtual environments"
+        log_info "You can install Poetry manually later from: https://python-poetry.org/docs/#installation"
+    fi
 }
 
 # Install Docker
@@ -187,14 +249,61 @@ install_docker() {
     case "$OS" in
         linux)
             log_info "Installing Docker for Linux"
-            curl -fsSL https://get.docker.com | sh
-            sudo usermod -aG docker $USER
-            sudo systemctl start docker
-            sudo systemctl enable docker
+            
+            # Try official Docker installation script first
+            if curl -fsSL --connect-timeout 10 https://get.docker.com | sh; then
+                log_success "Docker installed via official script"
+            else
+                log_warn "Official Docker installer failed, trying package manager..."
+                
+                # Fallback to package manager
+                if command_exists apt-get; then
+                    sudo apt-get update
+                    sudo apt-get install -y docker.io docker-compose
+                    log_success "Docker installed via apt"
+                elif command_exists yum; then
+                    sudo yum install -y docker docker-compose
+                    log_success "Docker installed via yum"
+                elif command_exists pacman; then
+                    sudo pacman -S --noconfirm docker docker-compose
+                    log_success "Docker installed via pacman"
+                else
+                    log_error "Could not install Docker - no supported package manager found"
+                    log_info "Please install Docker manually from: https://docs.docker.com/get-docker/"
+                    return
+                fi
+            fi
+            
+            # Configure Docker
+            if command_exists docker; then
+                sudo usermod -aG docker $USER || log_warn "Could not add user to docker group"
+                
+                # Try to start Docker service
+                if sudo systemctl start docker 2>/dev/null; then
+                    sudo systemctl enable docker 2>/dev/null
+                    log_success "Docker service started and enabled"
+                elif sudo service docker start 2>/dev/null; then
+                    log_success "Docker service started"
+                else
+                    log_warn "Could not start Docker service automatically"
+                    log_info "You may need to start Docker manually: sudo systemctl start docker"
+                fi
+            fi
             ;;
         darwin)
             log_info "Installing Docker Desktop for macOS"
-            log_warn "Please install Docker Desktop manually from: https://www.docker.com/products/docker-desktop"
+            if command_exists brew; then
+                if brew install --cask docker; then
+                    log_success "Docker Desktop installed via Homebrew"
+                    log_info "Please start Docker Desktop from Applications"
+                else
+                    log_warn "Homebrew Docker installation failed"
+                    log_info "Please install Docker Desktop manually from: https://www.docker.com/products/docker-desktop"
+                fi
+            else
+                log_warn "Homebrew not available"
+                log_info "Please install Docker Desktop manually from: https://www.docker.com/products/docker-desktop"
+            fi
             ;;
     esac
     
@@ -209,20 +318,37 @@ install_ollama() {
         log_success "Ollama already installed"
     else
         log_info "Installing Ollama for local LLM inference"
-        curl -fsSL https://ollama.ai/install.sh | sh
+        
+        # Try official installer with timeout
+        if curl -fsSL --connect-timeout 10 https://ollama.ai/install.sh | sh; then
+            log_success "Ollama installed successfully"
+        else
+            log_warn "Ollama installation failed"
+            log_info "You can install Ollama manually later from: https://ollama.ai/download"
+            log_info "The system will work without LLM features for now"
+            return
+        fi
     fi
     
     # Start Ollama service
     if ! pgrep -x "ollama" > /dev/null; then
         log_info "Starting Ollama service"
-        ollama serve &
-        sleep 5
+        if ollama serve &>/dev/null &; then
+            sleep 5
+            log_success "Ollama service started"
+        else
+            log_warn "Could not start Ollama service automatically"
+            log_info "You can start it manually with: ollama serve"
+        fi
     fi
     
-    # Interactive model selection
-    select_ollama_model
-    
-    log_success "Ollama installed and model ready"
+    # Interactive model selection (only if Ollama is working)
+    if command_exists ollama; then
+        select_ollama_model
+        log_success "Ollama installed and model ready"
+    else
+        log_warn "Ollama not available, skipping model installation"
+    fi
 }
 
 # Interactive model selection for Ollama
@@ -347,10 +473,43 @@ install_tailscale() {
     fi
     
     log_info "Installing Tailscale for secure networking"
-    curl -fsSL https://tailscale.com/install.sh | sh
     
-    log_success "Tailscale installed"
-    log_info "To connect to Tailnet, run: sudo tailscale up"
+    # Try official installer with timeout
+    if curl -fsSL --connect-timeout 10 https://tailscale.com/install.sh | sh; then
+        log_success "Tailscale installed successfully"
+        log_info "To connect to Tailnet, run: sudo tailscale up"
+    else
+        log_warn "Tailscale installation failed"
+        
+        # Try package manager fallback
+        case "$OS" in
+            linux)
+                if command_exists apt-get; then
+                    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+                    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list | sudo tee /etc/apt/sources.list.d/tailscale.list
+                    sudo apt-get update && sudo apt-get install -y tailscale
+                    log_success "Tailscale installed via apt"
+                elif command_exists yum; then
+                    sudo yum install -y yum-utils
+                    sudo yum-config-manager --add-repo https://pkgs.tailscale.com/stable/rhel/9/tailscale.repo
+                    sudo yum install -y tailscale
+                    log_success "Tailscale installed via yum"
+                else
+                    log_warn "Could not install Tailscale automatically"
+                    log_info "You can install it manually from: https://tailscale.com/download"
+                fi
+                ;;
+            darwin)
+                if command_exists brew; then
+                    brew install tailscale
+                    log_success "Tailscale installed via Homebrew"
+                else
+                    log_warn "Could not install Tailscale automatically"
+                    log_info "You can install it manually from: https://tailscale.com/download"
+                fi
+                ;;
+        esac
+    fi
 }
 
 # Install DVC
@@ -558,8 +717,23 @@ except Exception as e:
 show_usage() {
     log_header "Installation Complete!"
     
-    echo -e "${GREEN}🎉 Omnitide AI Suite is now installed and ready to use!${NC}\n"
+    echo -e "${GREEN}🎉 Omnitide AI Suite installation finished!${NC}\n"
     
+    # Show what was successfully installed
+    echo -e "${CYAN}Installed Components:${NC}"
+    local components=("python3:Python" "pip:Pip" "poetry:Poetry" "docker:Docker" "ollama:Ollama" "tailscale:Tailscale" "dvc:DVC")
+    
+    for component in "${components[@]}"; do
+        local cmd="${component%:*}"
+        local name="${component#*:}"
+        if command_exists "$cmd"; then
+            echo -e "  ✅ ${GREEN}$name${NC}"
+        else
+            echo -e "  ❌ ${YELLOW}$name (not installed)${NC}"
+        fi
+    done
+    
+    echo ""
     echo -e "${CYAN}Quick Start Commands:${NC}"
     echo -e "  ${YELLOW}# Activate virtual environment${NC}"
     echo -e "  source .venv/bin/activate"
@@ -589,7 +763,64 @@ show_usage() {
     echo -e "  • ${YELLOW}README_INTELLIGENT.md${NC} - Detailed intelligent features"
     echo -e ""
     
+    # Show any missing components and how to install them
+    local missing_optional=()
+    for component in "${components[@]}"; do
+        local cmd="${component%:*}"
+        local name="${component#*:}"
+        if ! command_exists "$cmd" && [[ "$cmd" != "python3" && "$cmd" != "pip" ]]; then
+            missing_optional+=("$name")
+        fi
+    done
+    
+    if [ ${#missing_optional[@]} -gt 0 ]; then
+        echo -e "${YELLOW}Optional components not installed:${NC}"
+        for component in "${missing_optional[@]}"; do
+            case "$component" in
+                "Poetry") echo -e "  • Install manually: ${CYAN}https://python-poetry.org/docs/#installation${NC}" ;;
+                "Docker") echo -e "  • Install manually: ${CYAN}https://docs.docker.com/get-docker/${NC}" ;;
+                "Ollama") echo -e "  • Install manually: ${CYAN}https://ollama.ai/download${NC}" ;;
+                "Tailscale") echo -e "  • Install manually: ${CYAN}https://tailscale.com/download${NC}" ;;
+                "DVC") echo -e "  • Install with: ${CYAN}pip install dvc${NC}" ;;
+            esac
+        done
+        echo ""
+    fi
+    
     echo -e "${GREEN}Happy coding with Omnitide AI Suite! 🚀${NC}"
+}
+
+# Check network connectivity
+check_network() {
+    log_info "Checking network connectivity..."
+    
+    # Test basic connectivity
+    if ping -c 1 -W 5 8.8.8.8 &>/dev/null; then
+        log_success "Internet connectivity confirmed"
+    else
+        log_warn "Internet connectivity issues detected"
+        log_info "Some installations may fail. Check your network connection."
+    fi
+    
+    # Test HTTPS connectivity to key services
+    local services=("https://install.python-poetry.org" "https://get.docker.com" "https://ollama.ai" "https://tailscale.com")
+    local failed_services=()
+    
+    for service in "${services[@]}"; do
+        if ! curl -fsSL --connect-timeout 5 --max-time 10 "$service" &>/dev/null; then
+            failed_services+=("$service")
+        fi
+    done
+    
+    if [ ${#failed_services[@]} -eq 0 ]; then
+        log_success "All installation services are reachable"
+    else
+        log_warn "Some services are unreachable:"
+        for service in "${failed_services[@]}"; do
+            log_warn "  - $service"
+        done
+        log_info "Installation will use fallback methods when possible"
+    fi
 }
 
 # Main installation flow
@@ -611,6 +842,9 @@ main() {
     
     # Detect system
     detect_system
+    
+    # Check network connectivity
+    check_network
     
     # Install system dependencies
     install_system_deps
