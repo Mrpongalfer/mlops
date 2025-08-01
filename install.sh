@@ -542,7 +542,14 @@ install_project_deps() {
     
     if [ -f "pyproject.toml" ] && command_exists poetry; then
         log_info "Installing dependencies with Poetry"
-        poetry install
+        if poetry install; then
+            log_success "Poetry dependencies installed"
+        elif poetry install --no-root; then
+            log_success "Poetry dependencies installed (no-root mode)"
+        else
+            log_warn "Poetry installation failed, falling back to pip"
+            pip install -r requirements.txt 2>/dev/null || pip install fastapi uvicorn scikit-learn pandas joblib dvc pydantic prometheus-client structlog rich pyyaml typer pytest pytest-cov ruff
+        fi
     elif [ -f "requirements.txt" ]; then
         log_info "Installing dependencies with pip"
         pip install -r requirements.txt

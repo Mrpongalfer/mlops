@@ -67,18 +67,47 @@ The installer automatically:
 - ✅ Runs initial model training
 - ✅ Validates the installation
 
-### Available LLM Models
+### After Installation
 
-When using the interactive installer, you can choose from:
-1. **phi3:mini** - Fast, efficient, great for coding (default)
-2. **llama3.1:8b** - Versatile, good balance of speed and capability  
-3. **llama3.2:3b** - Lightweight, fast inference
-4. **codellama:7b** - Specialized for code generation
-5. **mistral:7b** - Excellent instruction following
-6. **gemma2:9b** - Google's efficient model
-7. **qwen2.5:7b** - Strong multilingual capabilities
-8. **Custom model** - Enter any model from Ollama's registry
-9. **Skip installation** - Install models later manually
+Once installed, activate the environment and run the system:
+
+```bash
+# Activate the virtual environment
+source .venv/bin/activate
+
+# Start the API server
+python main.py
+# OR using the CLI tool
+python omnitide.py run
+
+# For intelligent mode with self-healing
+python main_intelligent.py
+
+# Interactive CLI mode
+python omnitide.py interactive
+
+# Run self-healing agent
+python omnitide.py agent heal
+```
+
+### Development Setup
+
+If you're developing or want to install manually:
+
+```bash
+# Clone the repository
+git clone https://github.com/mrpongalfer/mlops.git
+cd mlops
+
+# Install with Poetry
+poetry install
+
+# Or install with pip
+pip install -r requirements.txt
+
+# Run the system
+python main.py
+```
 
 ### 3. Using the Intelligent Entrypoint (Recommended)
 
