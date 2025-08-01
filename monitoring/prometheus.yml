@@ -1,0 +1,45 @@
+# Prometheus configuration for Omnitide AI Suite
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scrape Omnitide AI Suite API
+  - job_name: 'omnitide-api'
+    static_configs:
+      - targets: ['omnitide-api:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Scrape system metrics (if node_exporter is available)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['localhost:9100']
+
+  # Scrape MinIO metrics
+  - job_name: 'minio'
+    static_configs:
+      - targets: ['dvc-storage:9000']
+    metrics_path: '/minio/v2/metrics/cluster'
+
+  # Scrape Redis metrics (if redis_exporter is available)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['localhost:9121']
+
+# Alerting rules (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093

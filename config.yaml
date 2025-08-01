@@ -1,0 +1,38 @@
+# config.yaml
+project:
+  name: "Omnitide AI Suite"
+  version: "1.0.0"
+
+paths:
+  data_raw: "data/raw/data.csv"
+  models_dir: "models"
+  reports_dir: "reports"
+  model_filename: "latest_model.joblib"
+  preprocessor_filename: "preprocessor.joblib"
+  metrics_filename: "latest_metrics.json"
+  llm_report_filename: "llm_report_summary.md"
+  openapi_filename: "openapi.json"
+  coverage_report_filename: "coverage.html"
+
+data:
+  test_size: 0.2
+  random_state: 42
+  target_column: "target"
+  expected_columns:
+    - "feature1"
+    - "feature2"
+    - "target"
+
+models:
+  ollama:
+    name: "phi3:3.8b-mini-instruct-4k-q4_0"
+    tag: "phi3:3.8b"
+  random_forest:
+    n_estimators: 100
+    n_jobs: -1
+    random_state: 42
+
+api:
+  version: "/v1"
+  port: 8000
+  host: "0.0.0.0"

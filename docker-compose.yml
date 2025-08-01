@@ -1,0 +1,168 @@
+# docker-compose.yml - Production-ready orchestration for Omnitide AI Suite
+version: '3.8'
+
+services:
+  # Main Omnitide AI Suite API
+  omnitide-api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: omnitide-api-1
+    ports:
+      - "8000:8000"
+      - "11434:11434"  # Ollama port
+    environment:
+      - ENVIRONMENT=production
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - OLLAMA_MODEL_NAME=phi3:3.8b-mini-instruct-4k-q4_0
+      - PROMETHEUS_PORT=9090
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+      - omnitide-models:/app/models
+      - omnitide-data:/app/data
+    networks:
+      - omnitide-network
+    depends_on:
+      - prometheus
+      - dvc-storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: omnitide-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - omnitide-network
+    restart: unless-stopped
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: omnitide-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=omnitide123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - omnitide-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # MinIO for DVC storage (S3-compatible)
+  dvc-storage:
+    image: minio/minio:latest
+    container_name: omnitide-dvc-storage
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=omnitide
+      - MINIO_ROOT_PASSWORD=omnitide123
+      - MINIO_DEFAULT_BUCKETS=dvc-data,models,reports
+    volumes:
+      - dvc-data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - omnitide-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: omnitide-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - omnitide-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Load balancer (for multiple API instances)
+  nginx:
+    image: nginx:alpine
+    container_name: omnitide-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/certs:/etc/nginx/certs
+    networks:
+      - omnitide-network
+    depends_on:
+      - omnitide-api
+    restart: unless-stopped
+
+  # Jupyter Lab for data science workflows
+  jupyter:
+    image: jupyter/scipy-notebook:latest
+    container_name: omnitide-jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=omnitide123
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./data:/home/jovyan/work/data
+      - ./models:/home/jovyan/work/models
+    networks:
+      - omnitide-network
+    restart: unless-stopped
+
+volumes:
+  omnitide-models:
+    driver: local
+  omnitide-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  dvc-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  omnitide-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,7 @@
+# .dvc/config
+[core]
+  remote = myremote
+
+['remote "myremote"']
+  url = s3://my-dvc-bucket
+  endpointurl = http://dvc-storage.tailnet-id.ts.net:9000

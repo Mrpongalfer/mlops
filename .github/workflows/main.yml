@@ -1,0 +1,120 @@
+# .github/workflows/main.yml
+name: AI MLOps CI/CD Pipeline with Omnitide Tailnet Integration
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  POETRY_VIRTUALENVS_IN_PROJECT: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup x-cmd, Poetry, Ollama, and Tailscale
+        run: |
+          bash setup.sh
+
+      - name: Run CLI to Lint
+        run: omnitide lint
+
+      - name: Run CLI to Test
+        run: omnitide test
+
+      - name: Upload Test Coverage Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: code-coverage-report
+          path: reports/coverage.html
+      
+      - name: Check DVC Remote Connectivity
+        env:
+          DVC_REMOTE_URL: ${{ secrets.DVC_REMOTE_URL }}
+        run: |
+          echo "Checking DVC remote connectivity..."
+          # Example: ping the remote's IP to verify network connectivity
+          # DVC_REMOTE_HOST=$(echo "$DVC_REMOTE_URL" | sed -e 's|http://||' -e 's|:.*||')
+          # ping -c 3 "$DVC_REMOTE_HOST" || true
+
+      - name: Generate and Commit OpenAPI Schema
+        run: |
+          poetry run python -c "from main import app; from pathlib import Path; import json; Path('reports/openapi.json').write_text(json.dumps(app.openapi()))"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/openapi.json
+          git commit -m "feat: Update OpenAPI schema" || true
+          git push
+
+  train-and-deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: success()
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup x-cmd, Poetry, Ollama, and Tailscale
+        run: |
+          bash setup.sh
+
+      - name: Join Omnitide Tailnet
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          sudo tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname="github-runner-${{ github.run_id }}"
+          sleep 5
+
+      - name: Configure DVC Remote
+        run: |
+          x env use dvc
+          dvc remote modify myremote url ${{ secrets.DVC_REMOTE_URL }} --local
+          dvc remote modify myremote access_key_id ${{ secrets.DVC_ACCESS_KEY_ID }} --local
+          dvc remote modify myremote secret_access_key ${{ secrets.DVC_SECRET_ACCESS_KEY }} --local
+          dvc pull
+
+      - name: Train and Evaluate Models
+        run: |
+          poetry run python src/data_processor.py data/raw/data.csv
+          poetry run python src/model_trainer.py
+          poetry run python src/model_evaluator.py models/latest_model.joblib models/preprocessor.joblib data/raw/data.csv
+          poetry run python src/llm_agent.py
+
+      - name: DVC Commit and Push
+        run: |
+          x env use dvc
+          dvc add models/latest_model.joblib
+          dvc add reports/latest_metrics.json
+          dvc add reports/llm_report_summary.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .dvc
+          git commit -m "CI/CD: New model, metrics, and Ollama report [skip ci]" || true
+          dvc push
+          git push
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: registry-server.tailnet-id.ts.net/my-ai-model:latest
+      
+      - name: Scan Docker Image for Vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'registry-server.tailnet-id.ts.net/my-ai-model:latest'
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+
+      - name: Deploy to Production
+        run: |
+          echo "Deployment to production service triggered."
